@@ -183,6 +183,9 @@ class AccountManager extends Interceptor {
       'hdslb.com',
       'biliimg.com',
       'site/getCoin',
+      // 该接口失败只影响续播到上次分P/看点/字幕, 调用方已按 Success 优雅降级,
+      // 播放不受影响, 不该再弹窗打扰用户。
+      'player/wbi/v2',
     ];
     String url = err.requestOptions.uri.toString();
     if (kDebugMode) debugPrint('🌹🌹ApiInterceptor: $url\n$err');

@@ -818,6 +818,12 @@ abstract final class VideoHttp {
     dynamic epId,
   }) async {
     assert(aid != null || bvid != null);
+    // /x/player/wbi/v2 是 web 播放器接口。在部分被风控的设备上, 缺少 web 指纹参数时
+    // WAF 会直接返回 HTTP 412 + text/html 拦截页(而非 B 站应用层的 200 {"code":...}),
+    // 表现为「服务器异常」。补齐与 videoUrl() 同款的 dm_*/web_location 等指纹,
+    // 使请求特征与正常的 web 播放器一致, 降低被判为机器人的概率。
+    final dmImgStr = Utils.base64EncodeRandomString(16, 64);
+    final dmCoverImgStr = Utils.base64EncodeRandomString(32, 128);
     final res = await Request().get(
       Api.playInfo,
       queryParameters: await WbiSign.makSign({
@@ -826,6 +832,13 @@ abstract final class VideoHttp {
         'cid': cid,
         'season_id': ?seasonId,
         'ep_id': ?epId,
+        'web_location': 1315873,
+        'gaia_source': 'pre-load',
+        'isGaiaAvoided': true,
+        'dm_img_list': '[]',
+        'dm_img_str': dmImgStr,
+        'dm_cover_img_str': dmCoverImgStr,
+        'dm_img_inter': '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
       }),
     );
     if (res.data['code'] == 0) {
