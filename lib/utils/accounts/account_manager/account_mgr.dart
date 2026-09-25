@@ -189,20 +189,23 @@ class AccountManager extends Interceptor {
     if (skipShow.any(url.contains) ||
         (url.contains('skipSegments') && err.requestOptions.method == 'GET')) {
       // skip
-    } else if (_firstToastFor(err.requestOptions.uri.path)) {
+    } else {
       final type = err.type;
       final isNetIssue =
           type == DioExceptionType.connectionError ||
           type == DioExceptionType.connectionTimeout ||
           type == DioExceptionType.sendTimeout ||
           type == DioExceptionType.receiveTimeout;
+      // 去重只作用于弹窗: kDebugMode 的 debugPrint 永远全量打印, 便于调试时看每次失败。
       if (isNetIssue) {
         final diag = diagnose(err);
         if (kDebugMode) debugPrint('🌹🌹诊断: $diag');
+        if (!_firstToastFor(err.requestOptions.uri.path)) return;
         dioError(err).then((res) => SmartDialog.showToast('$res$url\n$diag'));
       } else {
         // 追加响应侧字段, 让「服务器异常」能自证来源: 非 2xx 的真实状态码、
         // 重定向后的最终地址、内容类型(区分 B 站 JSON 与劫持/WAF 的 text/html)与正文开头。
+        if (!_firstToastFor(err.requestOptions.uri.path)) return;
         dioError(err).then(
           (res) => SmartDialog.showToast('$res$url${responseDiag(err)}'),
         );
