@@ -189,7 +189,7 @@ class AccountManager extends Interceptor {
     if (skipShow.any(url.contains) ||
         (url.contains('skipSegments') && err.requestOptions.method == 'GET')) {
       // skip
-    } else {
+    } else if (_firstToastFor(err.requestOptions.uri.path)) {
       final type = err.type;
       final isNetIssue =
           type == DioExceptionType.connectionError ||
@@ -201,7 +201,11 @@ class AccountManager extends Interceptor {
         if (kDebugMode) debugPrint('🌹🌹诊断: $diag');
         dioError(err).then((res) => SmartDialog.showToast('$res$url\n$diag'));
       } else {
-        dioError(err).then((res) => SmartDialog.showToast(res + url));
+        // 追加响应侧字段, 让「服务器异常」能自证来源: 非 2xx 的真实状态码、
+        // 重定向后的最终地址、内容类型(区分 B 站 JSON 与劫持/WAF 的 text/html)与正文开头。
+        dioError(err).then(
+          (res) => SmartDialog.showToast('$res$url${responseDiag(err)}'),
+        );
       }
     }
   }
@@ -222,6 +226,39 @@ class AccountManager extends Interceptor {
         : 'off';
     return '[诊断] host=${options.uri.host} ip=$ip '
         'proxy=$proxy http2=${Pref.enableHttp2} elapsed=$elapsed';
+  }
+
+  /// 同一接口路径本会话只提示一次, 避免每次进入页面都被同一个错误弹窗骚扰。
+  /// 返回 true 表示该路径首次出现, 可以弹窗。
+  static bool _firstToastFor(String path) => _toastedPaths.add(path);
+
+  /// 已弹过窗的接口路径 (进程内, 不落盘)
+  static final Set<String> _toastedPaths = <String>{};
+
+  /// 非网络类失败 (badResponse 等) 的响应侧诊断。
+  /// 仅含状态码/最终地址/内容类型/正文摘要, 不含请求头与 cookie/token/sessdata 等敏感值 (正文按 120 字符截断)。
+  static String responseDiag(DioException err) {
+    final res = err.response;
+    final parts = <String>[];
+    if (res != null) {
+      final code = res.statusCode;
+      if (code != null) parts.add('[HTTP $code]');
+      final finalUri = err.requestOptions.uri.resolveUri(res.realUri);
+      if (finalUri != err.requestOptions.uri) parts.add('final=$finalUri');
+      final ct = res.headers.value('content-type');
+      if (ct != null) parts.add('ct=$ct');
+    }
+    final msg = err.message;
+    if (msg != null && msg.isNotEmpty) parts.add('msg=$msg');
+    final data = res?.data;
+    if (data != null) parts.add('body=${_bodySnippet(data)}');
+    return parts.isEmpty ? '' : ' ${parts.join(' ')}';
+  }
+
+  /// 响应正文压成单行并截断, 防止长正文刷屏
+  static String _bodySnippet(Object data) {
+    final body = '$data'.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return body.length > 120 ? body.substring(0, 120) : body;
   }
 
   static Future<void> _saveCookies(Account account, Response response) async {
