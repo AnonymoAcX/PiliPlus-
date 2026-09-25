@@ -633,6 +633,8 @@ abstract final class VideoHttp {
       },
       options: Options(
         contentType: Headers.formUrlEncodedContentType,
+        // act 为绝对值语义(follow/unfollow/block), 重复执行结果一致, 允许响应超时后安全重放
+        extra: {'_retryTimeout': true},
         headers: {
           'origin': 'https://space.bilibili.com',
           'referer': 'https://space.bilibili.com/$mid/dynamic',

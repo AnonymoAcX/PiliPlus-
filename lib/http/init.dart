@@ -229,7 +229,7 @@ class Request {
       receiveTimeout: const Duration(milliseconds: 10000),
       //Http请求头.
       headers: {
-        'user-agent': 'Dart/3.6 (dart:io)', // Http2Adapter不会自动添加标头
+        // user-agent 由 AccountManager.onRequest 按 B 站域名补齐 (见其注释)
         if (!_enableHttp2) 'connection': 'keep-alive',
         'accept-encoding': 'br,gzip',
       },
@@ -247,7 +247,12 @@ class Request {
     // 先于其他Interceptor
     if (Pref.retryCount != 0) {
       dio.interceptors.add(
-        RetryInterceptor(dio, Pref.retryCount, Pref.retryDelay),
+        RetryInterceptor(
+          dio,
+          Pref.retryCount,
+          Pref.retryDelay,
+          _resetAdaptersForNetworkChange,
+        ),
       );
     }
 
@@ -268,7 +273,9 @@ class Request {
         return status != null && status >= 200 && status < 300;
       };
 
-    if (Platform.isIOS) _watchConnectivity();
+    // Android 同样监听网络变化: 换网/信号抖动后丢弃连接池死连接, 否则后续请求复用
+    // 死 socket 会一直等到 receiveTimeout (iOS 原有此逻辑, Android 此前缺失)
+    if (Platform.isIOS || Platform.isAndroid) _watchConnectivity();
   }
 
   /*

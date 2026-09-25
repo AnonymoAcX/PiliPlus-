@@ -1,6 +1,7 @@
 // edit from package:dio_cookie_manager
 import 'dart:io';
 
+import 'package:PiliPlus/common/constants.dart';
 import 'package:PiliPlus/http/api.dart';
 import 'package:PiliPlus/http/constants.dart';
 import 'package:PiliPlus/models/common/account_type.dart';
@@ -43,6 +44,17 @@ class AccountManager extends Interceptor {
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
     final path = options.path;
+
+    // B 站域名缺失 user-agent 时补齐合理默认 (Http2Adapter 不会自动添加标头);
+    // 不覆盖调用点显式指定的 UA, 也不影响非 B 站域名
+    if (options.headers['user-agent'] == null &&
+        options.uri.host.endsWith('bilibili.com')) {
+      options.headers['user-agent'] = path.startsWith(HttpString.appBaseUrl)
+          ? Constants.userAgentApp
+          : Constants.userAgent;
+    }
+    // 记录请求起始时间, 供超时诊断计算实际耗时
+    options.extra['_reqStart'] = DateTime.now().millisecondsSinceEpoch;
 
     final account = _bindRequestAccount(options);
 
@@ -178,8 +190,38 @@ class AccountManager extends Interceptor {
         (url.contains('skipSegments') && err.requestOptions.method == 'GET')) {
       // skip
     } else {
-      dioError(err).then((res) => SmartDialog.showToast(res + url));
+      final type = err.type;
+      final isNetIssue =
+          type == DioExceptionType.connectionError ||
+          type == DioExceptionType.connectionTimeout ||
+          type == DioExceptionType.sendTimeout ||
+          type == DioExceptionType.receiveTimeout;
+      if (isNetIssue) {
+        final diag = diagnose(err);
+        if (kDebugMode) debugPrint('🌹🌹诊断: $diag');
+        dioError(err).then((res) => SmartDialog.showToast('$res$url\n$diag'));
+      } else {
+        dioError(err).then((res) => SmartDialog.showToast(res + url));
+      }
     }
+  }
+
+  /// 超时/连接类失败的可读诊断 (仅环境与耗时, 不含 cookie/token/csrf 等敏感值)
+  static String diagnose(DioException err) {
+    final options = err.requestOptions;
+    final error = err.error;
+    final ip = error is SocketException
+        ? (error.address?.address ?? 'unknown')
+        : 'unknown';
+    final start = options.extra['_reqStart'];
+    final elapsed = start is int
+        ? '${DateTime.now().millisecondsSinceEpoch - start}ms'
+        : 'unknown';
+    final proxy = Pref.enableSystemProxy
+        ? '${Pref.systemProxyHost}:${Pref.systemProxyPort}'
+        : 'off';
+    return '[诊断] host=${options.uri.host} ip=$ip '
+        'proxy=$proxy http2=${Pref.enableHttp2} elapsed=$elapsed';
   }
 
   static Future<void> _saveCookies(Account account, Response response) async {
